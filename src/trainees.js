@@ -7,16 +7,25 @@ const VIEWPORT_SIZE = { width: 1100, height: 900 };
 const ALBUM_ART = 'albumArt';
 const ART_ASPECT_RATIO = 'artAspectRatio';
 
-function getAspectRatio() {
-    return score(fnode => {
-        const element = fnode.element;
-        if (!element.width || !element.height) return 0;
+const byAspectRatio = fnode => {
+    const element = fnode.element;
+    if (!element.offsetWidth || !element.offsetHeight) return 0;
 
-        const bigger = Math.max(element.width, element.height);
-        const smaller = Math.min(element.width, element.height);
+    const bigger = Math.max(element.offsetWidth, element.offsetHeight);
+    const smaller = Math.min(element.offsetWidth, element.offsetHeight);
 
-        return smaller / bigger
-    });
+    // TODO calculations are off
+    return smaller / bigger;
+};
+
+const divIsImage = fnode => {
+    const element = fnode.element;
+    const id = element.id.toLowerCase();
+    const classes = [...element.classList].map(it => it.toLowerCase());
+
+    const allClassifiers = [id, ...classes];
+
+    return allClassifiers.some(it => it.includes("image") || it.includes("img") || it.includes("art") || it.includes("album"));
 };
 
 function makeRuleset() {
@@ -30,24 +39,17 @@ function makeRuleset() {
 
         // All visible images
         rule(dom('img').when(isVisible), type(ALBUM_ART)),
-        rule(dom('div').when(fnode => {
-            const element = fnode.element;
-            const id = element.id.toLowerCase();
-            const classes = [...element.classList].map(it => it.toLowerCase());
-            
-            const allClassifiers = [id, ...classes];
-        
-            return allClassifiers.some(it => it.includes("image") || it.includes("img") || it.includes("art") || it.includes("album"));
-        }), type(ALBUM_ART)),
+        rule(dom('div').when(divIsImage), type(ALBUM_ART)),
         // Aspect ratios of images
         rule(
             type(ALBUM_ART),
-            getAspectRatio(),
-            { name: ART_ASPECT_RATIO }),
+            score(byAspectRatio),
+            { name: ART_ASPECT_RATIO }
+        ),
 
         // Output
         rule(type(ALBUM_ART).max(), out(ALBUM_ART))
-    ])
+    ]);
 };
 
 const config = new Map();
