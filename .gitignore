@@ -2,3 +2,6 @@
 /addon/trainees.js
 /addon/background.js
 /addon/contentScript.js
+.idea/
+package-lock.json
+runs/
