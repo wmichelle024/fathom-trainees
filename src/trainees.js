@@ -1,8 +1,8 @@
 'use strict';
 
-import { ruleset, rule, dom, type, score, out} from 'fathom-web';
+import { ruleset, rule, dom, type, score, out } from 'fathom-web';
 import { euclidean } from 'fathom-web/clusters';
-import { ancestors, isVisible, min , page} from 'fathom-web/utilsForFrontend';
+import { ancestors, isVisible, min, page, sigmoid } from 'fathom-web/utilsForFrontend';
 import { types, names } from './constants';
 
 const VIEWPORT_DIMENS = { width: 1100, height: 900 };
@@ -13,24 +13,45 @@ const MUSIC_KEYWORDS = ['album', 'song', 'music', 'artist', 'genre']
 /* General Page Rules */
 
 // Checks for keyword in page URL
+// @param element - document
 function hasMusicKeywordInURL() {
-    return MUSIC_KEYWORDS.some(it => document.URL.includes(it));
+    let url = document.URL.toLowerCase();
+    return MUSIC_KEYWORDS.some(it => url.includes(it));
 }
 
 // Checks for keyword in page title   
+// @param element - document
 function hasMusicKeywordInTitle() {
-    return MUSIC_KEYWORDS.some(it => document.title.includes(it));
+    let title = document.title.toLowerCase();
+    return MUSIC_KEYWORDS.some(it => title.includes(it));
 }
 
 // Checks for keyword in search bar placeholder text 
 // @param element - input element
 function hasMusicSearchBar(element) {
-    return MUSIC_KEYWORDS.some(it => element.placeholder.includes(it));
+    let placeholder = element.placeholder.toLowerCase();
+    return MUSIC_KEYWORDS.some(it => placeholder.includes(it));
 }
 
 // Return total size of all images to total size (width * height) of text boxes
-function totalImageToTextSizeRatio(element) { 
-    // TODO
+function totalImageToTextSizeRatio() {
+    let allElem = flattenNodes(document.body);
+    console.log("flattened");
+    let artSize = 0;
+    let textSize = 0;
+    for (let e of allElem) {
+        if (e.offsetHeight != null && e.offsetWidth != null) {
+            if (hasImageAttribute(e)) {
+                console.log("found art");
+                artSize += e.offsetHeight * e.offsetWidth;
+            } else if (e.textContent != null && e.textContent.trim().length > 0) {
+                textSize += e.offsetHeight * e.offsetWidth;
+            }
+        }
+    }
+    console.log("artsize: " + artSize);
+    console.log("textSize: " + textSize);
+    return sigmoid(artSize / textSize);
 }
 
 // Return count of square images compared to all images on screen
@@ -64,7 +85,7 @@ function hasImageAttribute(element) {
 
     for (let ext of IMAGE_EXTENSIONS) {
         for (let attr of attributes) {
-            if (attr.value.includes('.' + ext)) return true;
+            if (attr.value.includes(ext)) return true;
         }
     }
     return false;
@@ -92,19 +113,22 @@ function sizeToViewport(element) {
     return (element.offsetHeight * element.offsetWidth) / VIEWPORT_SIZE;
 }
 
-/* Helper functions */ 
+/* Helper functions */
 // TODO: move to a different file?
 
 // Return array of all descendent nodes, including root element
 // @param element - root element to flatten
 function flattenNodes(element) {
+    console.log("flattening");
     let descendents = [];
     let next = [element];
-    let curr;
-    while (next) { 
-        curr = next.shift();
-        all.push(curr);
-        next.concat(curr.children);
+    while (next.length > 0) {
+        console.log(next.length);
+        let curr = next.shift();
+        descendents.push(curr);
+        if (curr.children) {
+            next = next.concat(Array.from(curr.children));
+        }
     }
     return descendents;
 }
@@ -119,52 +143,58 @@ function makeRuleset() {
         // id or class with art/album
 
         // All visible images
-        rule(dom('img').when(isVisible), type(types.ALBUM_ART)),
-        rule(dom('div').when(fnode => divIsImage(fnode.element)), type(types.ALBUM_ART)),
+        // rule(dom('img').when(isVisible), type(types.ALBUM_ART)),
+        // rule(dom('div').when(fnode => divIsImage(fnode.element)), type(types.ALBUM_ART)),
 
-        // Get largeness compared to viewport
-        rule(
-            type(types.ALBUM_ART),
-            score(fnode => sizeToViewport(fnode.element)),
-            { name: names.ART_AREA }
-        ),
-        // Aspect ratios of images
-        rule(
-            type(types.ALBUM_ART),
-            score(fnode => byAspectRatio(fnode.element)),
-            { name: names.ART_ASPECT_RATIO }
-        ),
-        // get horizontally centered score
-        rule(
-            type(types.ALBUM_ART),
-            score(fnode => getHorizontallyCentered(fnode.element)),
-            { name: names.ART_HORIZONTALLY_CENTERED }
-        ),
+        // // Get largeness compared to viewport
+        // rule(
+        //     type(types.ALBUM_ART),
+        //     score(fnode => sizeToViewport(fnode.element)),
+        //     { name: names.ART_AREA }
+        // ),
+        // // Aspect ratios of images
+        // rule(
+        //     type(types.ALBUM_ART),
+        //     score(fnode => byAspectRatio(fnode.element)),
+        //     { name: names.ART_ASPECT_RATIO }
+        // ),
+        // // get horizontally centered score
+        // rule(
+        //     type(types.ALBUM_ART),
+        //     score(fnode => getHorizontallyCentered(fnode.element)),
+        //     { name: names.ART_HORIZONTALLY_CENTERED }
+        // ),
 
-        rule(
-            type(types.ALBUM_ART),
-            score(fnode => hasImageAttribute(fnode.element)),
-            { name: names.HAS_IMG_EXT }
-        ),
+        // rule(
+        //     type(types.ALBUM_ART),
+        //     score(fnode => hasImageAttribute(fnode.element)),
+        //     { name: names.HAS_IMG_EXT }
+        // ),
 
-        // Output
-        rule(type(types.ALBUM_ART).max(), out(types.ALBUM_ART))
+        // // Output
+        // rule(type(types.ALBUM_ART).max(), out(types.ALBUM_ART))
+        // rule (dom('div'), type("music")),
+        rule(dom('html'), type(types.MUSIC)),
+        rule(type(types.MUSIC), score(page(totalImageToTextSizeRatio)), { name: names.IMG_TEXT_RATIO }),
+        rule(type(types.MUSIC), score(page(hasMusicKeywordInTitle)), { name: names.HAS_MUSIC_TITLE })
     ]);
 };
 
 const config = new Map();
 
 config.set(
-    types.ALBUM_ART,
+    types.MUSIC,
     {
         coeffs: new Map([
-            [names.ART_ASPECT_RATIO, 1],
-            [names.ART_AREA, 1],
-            [names.ART_HORIZONTALLY_CENTERED, 1],
-            [names.HAS_IMG_EXT, 1]
+            // [names.ART_ASPECT_RATIO, 1],
+            // [names.ART_AREA, 1],
+            // [names.ART_HORIZONTALLY_CENTERED, 1],
+            // [names.HAS_IMG_EXT, 1]
+            [names.HAS_MUSIC_TITLE, 1],
+            [names.IMG_TEXT_RATIO, 1]
         ]),
         viewportSize: VIEWPORT_DIMENS,
-        vectorType: types.ALBUM_ART,
+        vectorType: types.MUSIC,
         rulesetMaker: makeRuleset
     }
 );
@@ -177,5 +207,10 @@ export default config;
 //     divIsImage: divIsImage,
 //     getHorizontallyCentered: getHorizontallyCentered,
 //     sizeToViewport: sizeToViewport,
-//     hasImageAttribute: hasImageAttribute
+//     hasImageAttribute: hasImageAttribute,
+//     hasMusicKeywordInTitle: hasMusicKeywordInTitle,
+//     hasMusicKeywordInURL: hasMusicKeywordInURL,
+//     hasMusicSearchBar: hasMusicSearchBar,
+//     totalImageToTextSizeRatio: totalImageToTextSizeRatio
+
 // }
